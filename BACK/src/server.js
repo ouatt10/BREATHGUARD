@@ -45,6 +45,7 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/capteurs', require('./routes/capteurs'));
 app.use('/api/donnees', require('./routes/donnees')); 
+app.use('/api/symptomes', require('./routes/symptomes')); 
 
 
 // Gestion des erreurs 404
