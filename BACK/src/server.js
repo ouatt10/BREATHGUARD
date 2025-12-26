@@ -41,7 +41,7 @@ app.get('/health', (req, res) => {
 
 // Routes API (à ajouter progressivement)
 // app.use('/api/users', require('./routes/users'));
-// app.use('/api/alertes', require('./routes/alertes'));
+app.use('/api/alertes', require('./routes/alertes'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/capteurs', require('./routes/capteurs'));
 app.use('/api/donnees', require('./routes/donnees')); 
