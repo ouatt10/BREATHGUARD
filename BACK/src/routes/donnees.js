@@ -1,22 +1,23 @@
 const express = require('express');
 const router = express.Router();
-const {
-  addDonneeBiometrique,
-  getDonneesRealtime,
-  getHistorique,
-  addDonneeEnvironnementale
-} = require('../controllers/donneeController');
 const { protect } = require('../middleware/auth');
+const {
+  creerDonneeBiometrique,
+  getHistoriqueDonnees,
+  getStatistiquesDonnees,
+  supprimerDonnee,
+  getTypesDonnees  
+} = require('../controllers/donneeController');
 
 // Toutes les routes nécessitent une authentification
 router.use(protect);
 
 // Routes biométriques
-router.post('/biometriques', addDonneeBiometrique);
-router.get('/biometriques/realtime', getDonneesRealtime);
-router.get('/biometriques/historique', getHistorique);
+router.post('/biometriques', creerDonneeBiometrique);
+router.get('/biometriques/historique', getHistoriqueDonnees);
+router.get('/biometriques/statistiques', getStatistiquesDonnees);
+router.delete('/biometriques/:id', supprimerDonnee);
+router.get('/types', getTypesDonnees);
 
-// Routes environnementales
-router.post('/environnementales', addDonneeEnvironnementale);
 
 module.exports = router;

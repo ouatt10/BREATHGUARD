@@ -9,13 +9,14 @@ const donneeBiometriqueSchema = new mongoose.Schema({
   capteur: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Capteur',
-    required: true
+    required: false
   },
   type: {
-    type: String,
-    enum: ['spo2', 'frequenceRespiratoire', 'frequenceCardiaque'],
-    required: true
-  },
+  type: String,
+  required: true,
+  lowercase: true,  // ✅ Convertir en minuscules
+  trim: true        // ✅ Enlever les espaces
+ },
   valeur: {
     type: Number,
     required: true

@@ -1,19 +1,20 @@
 const express = require('express');
 const router = express.Router();
-const {
-  connectCapteur,
-  getCapteurs,
-  disconnectCapteur,
-  updateCapteurStatus
-} = require('../controllers/capteurController');
 const { protect } = require('../middleware/auth');
+const {
+  ajouterCapteur,
+  getMesCapteurs,
+  mettreAJourCapteur,
+  supprimerCapteur
+} = require('../controllers/capteurController');
 
 // Toutes les routes nécessitent une authentification
 router.use(protect);
 
-router.post('/connect', connectCapteur);
-router.get('/', getCapteurs);
-router.delete('/:id', disconnectCapteur);
-router.put('/:id/status', updateCapteurStatus);
+// Routes capteurs
+router.post('/', ajouterCapteur);
+router.get('/', getMesCapteurs);
+router.put('/:id', mettreAJourCapteur);
+router.delete('/:id', supprimerCapteur);
 
 module.exports = router;
