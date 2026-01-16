@@ -1,0 +1,6 @@
+adafruit/DHT sensor library @ ^1.4.4
+gabriel-milan/MAX30100_PulseOximeter @ ^1.2.0
+adafruit/Adafruit MPU6050 @ ^2.2.4
+paulstoffregen/OneWire @ ^2.3.7
+milesburton/DallasTemperature @ ^3.11.0
+adafruit/Adafruit Unified Sensor @ ^1.1.9
