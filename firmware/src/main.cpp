@@ -2,167 +2,197 @@
 #include <Wire.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
-#include "secrets.h" // Vos mots de passe sont ici
+#include "secrets.h" 
 
-// --- BIBLIOTHÈQUES CAPTEURS ---
+// --- 1. BIBLIOTHÈQUES ---
 #include <DHT.h>
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 #include "MAX30100_PulseOximeter.h"
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
-// --- DÉFINITIONS PINS (On garde tout le plan pour le futur) ---
-#define DHTPIN 15
+// --- 2. CONFIGURATION DES PINS ---
+#define DHTPIN 15           
 #define DHTTYPE DHT22
-// #define MQ2_PIN 34       // En attente
-// #define ONE_WIRE_BUS 4   // En attente (DS18B20)
+#define MQ2_PIN 34          // Gaz (Analogique A0)
+#define ONE_WIRE_BUS 4      // Temp Corporelle (DS18B20)
 
-// --- OBJETS ---
+// --- 3. OBJETS ---
 DHT dht(DHTPIN, DHTTYPE);
 Adafruit_MPU6050 mpu;
 PulseOximeter pox;
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+
 WiFiClient espClient;
 PubSubClient client(espClient);
 
 // --- VARIABLES ---
 long lastMsg = 0;
-float spo2 = 0;
-float bpm = 0;
+float currentSpO2 = 0;
+float currentBPM = 0;
 
 // Callback nécessaire pour le MAX30100
 void onBeatDetected() {
-    // Serial.println("♥"); // Décommenter pour debug visuel
+    // Serial.print("♥"); // Décommentez pour voir les battements en direct
 }
 
-// --- FONCTION DE CONNEXION WIFI ---
+// --- FONCTIONS SYSTÈME ---
 void setup_wifi() {
   delay(10);
   Serial.println();
-  Serial.print("Connexion au WiFi: ");
+  Serial.print("📡 Connexion WiFi à : ");
   Serial.println(WIFI_SSID);
 
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
+  int tentatives = 0;
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
+    tentatives++;
+    if (tentatives > 20) {
+        Serial.println("\n❌ Echec WiFi. Vérifiez secrets.h !");
+        break; 
+    }
   }
-  Serial.println("");
-  Serial.println("WiFi connecté !");
-  Serial.print("Adresse IP: ");
+  Serial.println("\n✅ WiFi Connecté ! IP: ");
   Serial.println(WiFi.localIP());
 }
 
-// --- FONCTION DE CONNEXION MQTT ---
 void reconnect() {
   while (!client.connected()) {
-    Serial.print("Connexion au broker MQTT...");
-    // ID Client unique basé sur l'heure pour éviter les conflits
-    String clientId = "BreathGuardClient-";
-    clientId += String(random(0xffff), HEX);
-    
+    Serial.print("☁️ Connexion MQTT...");
+    String clientId = "BreathGuard-" + String(random(0xffff), HEX);
     if (client.connect(clientId.c_str())) {
-      Serial.println("Connecté !");
+      Serial.println("✅ Connecté !");
     } else {
-      Serial.print("Échec, rc=");
+      Serial.print("❌ Echec (rc=");
       Serial.print(client.state());
-      Serial.println(" nouvelle tentative dans 5s");
+      Serial.println(") - Réessai 5s...");
       delay(5000);
     }
   }
 }
 
+// --- INITIALISATION (SETUP) ---
 void setup() {
   Serial.begin(115200);
+  Wire.begin(); // Démarrage I2C (SDA=21, SCL=22)
   
-  // 1. Démarrage des bus
-  Wire.begin(); // I2C pour MAX et MPU
+  Serial.println("\n\n--- 🏥 DÉMARRAGE DU DIAGNOSTIC SYSTÈME ---");
+
+  // 1. WiFi & Réseau
   setup_wifi();
   client.setServer(MQTT_SERVER, MQTT_PORT);
 
-  // 2. Initialisation des CAPTEURS ACTIFS
-  Serial.print("Init DHT22... ");
+  // 2. Capteur DHT22 (Air)
+  Serial.print("1. DHT22 (Air)......... ");
   dht.begin();
-  Serial.println("OK");
+  float testH = dht.readHumidity();
+  if (isnan(testH)) Serial.println("⚠️ ERREUR (Vérifiez Pin 15)");
+  else Serial.println("✅ OK");
 
-  Serial.print("Init MPU6050... ");
+  // 3. Capteur DS18B20 (Fièvre)
+  Serial.print("2. DS18B20 (Corps)..... ");
+  sensors.begin();
+  if (sensors.getDeviceCount() == 0) Serial.println("⚠️ NON DÉTECTÉ (Vérifiez Pin 4)");
+  else Serial.println("✅ OK (" + String(sensors.getDeviceCount()) + " sonde)");
+
+  // 4. Capteur MPU6050 (Mouvement)
+  Serial.print("3. MPU6050 (Resp)...... ");
   if (!mpu.begin()) {
-    Serial.println("ERREUR MPU6050 (Vérifiez câblage)");
-    // while (1); // On ne bloque pas le code pour l'instant
+    Serial.println("❌ ERREUR I2C (Vérifiez câbles SDA/SCL)");
   } else {
-    Serial.println("OK");
+    Serial.println("✅ OK");
     mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
     mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
   }
 
-  Serial.print("Init MAX30100... ");
+  // 5. Capteur MAX30100 (Coeur)
+  Serial.print("4. MAX30100 (SpO2)..... ");
   if (!pox.begin()) {
-    Serial.println("ERREUR MAX30100 (Vérifiez câblage/Alim)");
+    Serial.println("❌ ERREUR I2C (Conflit ou Alim)");
   } else {
-    Serial.println("OK");
+    Serial.println("✅ OK");
     pox.setIRLedCurrent(MAX30100_LED_CURR_7_6MA);
     pox.setOnBeatDetectedCallback(onBeatDetected);
   }
 
-  // Les autres capteurs (MQ2, DS18B20) sont ignorés pour l'instant
+  // 6. Capteur MQ-2 (Gaz)
+  Serial.println("5. MQ-2 (Gaz).......... ✅ OK (Lecture Analogique Pin 34)");
+
+  Serial.println("--- FIN DIAGNOSTIC. DÉBUT DU MONITORING ---\n");
 }
 
+// --- BOUCLE PRINCIPALE (LOOP) ---
 void loop() {
-  if (!client.connected()) {
-    reconnect();
-  }
+  if (!client.connected()) reconnect();
   client.loop();
   
-  // LE MAX30100 DOIT ÊTRE MIS À JOUR TRÈS SOUVENT
+  // Mise à jour critique du MAX30100 (doit tourner vite)
   pox.update();
 
-  // Envoi des données toutes les 5 secondes (5000ms)
   long now = millis();
-  if (now - lastMsg > 5000) {
+  if (now - lastMsg > 5000) { // Toutes les 5 secondes
     lastMsg = now;
 
-    // --- A. LECTURE DES CAPTEURS ACTIFS ---
+    // --- A. LECTURE DES VALEURS ---
     
-    // 1. Environnement (DHT22)
+    // Environnement
     float h = dht.readHumidity();
-    float t = dht.readTemperature(); // Temp ambiante
-    if (isnan(h) || isnan(t)) { h = 0; t = 0; Serial.println("Echec lecture DHT"); }
+    float t_amb = dht.readTemperature();
+    int gas_raw = analogRead(MQ2_PIN); // 0 à 4095
 
-    // 2. Respiration (MPU6050)
+    // Corps (DS18B20)
+    sensors.requestTemperatures(); 
+    float t_body = sensors.getTempCByIndex(0);
+
+    // Mouvement (MPU6050)
     sensors_event_t a, g, temp;
-    mpu.getEvent(&a, &g, &temp);
-    float resp_movement = a.acceleration.z; // On surveille le soulèvement du torse
+    float resp_z = 0;
+    if (mpu.getAccelerometerRange() != 0) { // Si MPU connecté
+        mpu.getEvent(&a, &g, &temp);
+        resp_z = a.acceleration.z;
+    }
 
-    // 3. Constantes (MAX30100)
-    // On prend les valeurs stockées par la librairie
-    spo2 = pox.getSpO2();
-    bpm = pox.getHeartRate();
+    // Coeur (MAX30100)
+    currentSpO2 = pox.getSpO2();
+    currentBPM = pox.getHeartRate();
 
+    // Simulation Audio (Cough) basée sur le gaz pour le test
+    bool cough = (gas_raw > 2000); 
 
-    // --- B. VALEURS "FANTÔMES" POUR LES CAPTEURS ABSENTS ---
-    // Ces valeurs seront remplacées plus tard quand vous aurez les câbles
-    float body_temp = 0.0; // DS18B20 absent
-    int gas_level = 0;     // MQ-2 absent
-    String cough_status = "Non detecte"; // Micro absent
+    // Nettoyage des erreurs (NaN -> 0)
+    if (isnan(h)) h = 0; 
+    if (isnan(t_amb)) t_amb = 0;
+    if (t_body == -127.00 || t_body == 85.00) t_body = 0; // Codes erreur DS18B20
 
-    // --- C. CRÉATION DU JSON (Le paquet de données) ---
-    // Format : {"temp_amb": 24, "hum": 40, "spo2": 98, ...}
+    // --- B. AFFICHAGE LOCAL (Moniteur Série) ---
+    Serial.println("--- 📊 RAPPORT CAPTEURS ---");
+    Serial.print("🌡️ Air: "); Serial.print(t_amb); Serial.print("°C | 💧 Hum: "); Serial.print(h); Serial.println("%");
+    Serial.print("🌫️ Gaz: "); Serial.println(gas_raw);
+    Serial.print("🤒 Corps: "); Serial.print(t_body); Serial.println("°C");
+    Serial.print("💓 BPM: "); Serial.print(currentBPM); Serial.print(" | 🌬️ SpO2: "); Serial.print(currentSpO2); Serial.println("%");
+    Serial.print("📉 Resp (Z): "); Serial.println(resp_z);
     
-    String jsonPayload = "{";
-    jsonPayload += "\"temp_amb\": " + String(t) + ",";
-    jsonPayload += "\"hum\": " + String(h) + ",";
-    jsonPayload += "\"spo2\": " + String(spo2) + ",";
-    jsonPayload += "\"bpm\": " + String(bpm) + ",";
-    jsonPayload += "\"resp_z\": " + String(resp_movement) + ",";
-    // Les champs "futurs" (pour que l'App soit prête)
-    jsonPayload += "\"body_temp\": " + String(body_temp) + ",";
-    jsonPayload += "\"gas\": " + String(gas_level);
-    jsonPayload += "}";
+    // --- C. ENVOI MQTT (JSON) ---
+    String json = "{";
+    json += "\"temp_amb\": " + String(t_amb) + ",";
+    json += "\"hum\": " + String(h) + ",";
+    json += "\"gas\": " + String(gas_raw) + ",";
+    json += "\"spo2\": " + String(currentSpO2) + ",";
+    json += "\"bpm\": " + String(currentBPM) + ",";
+    json += "\"body_temp\": " + String(t_body) + ",";
+    json += "\"resp_z\": " + String(resp_z) + ",";
+    json += "\"cough_detected\": " + String(cough ? "true" : "false");
+    json += "}";
 
-    // --- D. ENVOI VERS LE CLOUD ---
-    Serial.print("Envoi MQTT : ");
-    Serial.println(jsonPayload);
-    
-    // Conversion String -> char array pour MQTT
-    client.publish(MQTT_TOPIC_DATA, jsonPayload.c_str());
+    Serial.print("📤 Envoi Cloud: ");
+    Serial.println(json);
+    Serial.println("---------------------------\n");
+
+    client.publish(MQTT_TOPIC_DATA, json.c_str());
   }
 }

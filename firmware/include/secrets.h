@@ -2,8 +2,8 @@
 #define SECRETS_H
 
 // 1. VOS IDENTIFIANTS WI-FI
-const char* WIFI_SSID = "M2_RTEL";      // Mettez le nom exact
-const char* WIFI_PASSWORD = "M@ster_2024";  // Mettez le mot de passe
+const char* WIFI_SSID = "CANALBOX-C061-2G";      // Mettez le nom exact
+const char* WIFI_PASSWORD = "kZDt9cxx8Z";  // Mettez le mot de passe
 
 // 2. CONFIGURATION MQTT (Le Serveur)
 // Pour l'instant, on utilise un serveur de test public (HiveMQ) 
