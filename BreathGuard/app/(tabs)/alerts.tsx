@@ -1,116 +1,280 @@
-import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator, RefreshControl, Platform, Alert as RNAlert } from 'react-native';
+import { alertAPI } from '../../src/services/api';
 
 export default function AlertScreen() {
-  const alerts = [
-    {
-      id: 1,
-      type: 'info',
-      title: 'Recommandation Quotidienne',
-      message: 'Qualité d\'air excellente aujourd\'hui ! Profitez-en pour faire de l\'exercice.',
-      time: 'Il y a 5 min',
-      read: false,
-    },
-    {
-      id: 2,
-      type: 'warning',
-      title: 'Attention : Humidité élevée',
-      message: 'L\'humidité atteint 75%. Risque d\'irritation respiratoire. Hydratez-vous.',
-      time: 'Il y a 2h',
-      read: false,
-    },
-    {
-      id: 3,
-      type: 'success',
-      title: 'SpO2 Normal',
-      message: 'Votre saturation en oxygène est stable à 98%. Excellente forme !',
-      time: 'Il y a 5h',
-      read: true,
-    },
-  ];
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState('all'); // 'all', 'unread', 'critical'
 
-  const getAlertStyle = (type: string) => {
-    switch (type) {
-      case 'critical':
-        return { backgroundColor: '#FFE5E5', borderColor: '#D9534F' };
-      case 'warning':
-        return { backgroundColor: '#FFF4E5', borderColor: '#F0AD4E' };
-      case 'success':
-        return { backgroundColor: '#E8F8E8', borderColor: '#5CB85C' };
-      default:
-        return { backgroundColor: '#E8F4FD', borderColor: '#4A90E2' };
+  useEffect(() => {
+    loadAlerts();
+  }, []);
+
+  const loadAlerts = async () => {
+    try {
+      setLoading(true);
+      const response = await alertAPI.getAlerts();
+      
+      if (response.success && response.data?.alertes) {
+        setAlerts(response.data.alertes);
+      }
+    } catch (error) {
+      console.error('Erreur chargement alertes:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const getAlertIcon = (type: string) => {
-    switch (type) {
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadAlerts();
+  };
+
+  const handleMarkAsRead = async (alertId: string) => {
+    try {
+      await alertAPI.markAsRead(alertId);
+      
+      // Mettre à jour localement
+      setAlerts(alerts.map(alert => 
+        alert._id === alertId ? { ...alert, lu: true } : alert
+      ));
+    } catch (error) {
+      console.error('Erreur marquage alerte:', error);
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    const confirmed = Platform.OS === 'web'
+      ? window.confirm('Marquer toutes les alertes comme lues ?')
+      : await new Promise((resolve) => {
+          RNAlert.alert(
+            'Confirmation',
+            'Marquer toutes les alertes comme lues ?',
+            [
+              { text: 'Annuler', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Confirmer', onPress: () => resolve(true) },
+            ]
+          );
+        });
+
+    if (!confirmed) return;
+
+    try {
+      await alertAPI.markAllAsRead();
+      
+      // Mettre à jour localement
+      setAlerts(alerts.map(alert => ({ ...alert, lu: true })));
+      
+      if (Platform.OS === 'web') {
+        alert('Toutes les alertes ont été marquées comme lues');
+      }
+    } catch (error) {
+      console.error('Erreur marquage toutes alertes:', error);
+    }
+  };
+
+  const handleDeleteAlert = async (alertId: string) => {
+    const confirmed = Platform.OS === 'web'
+      ? window.confirm('Supprimer cette alerte ?')
+      : await new Promise((resolve) => {
+          RNAlert.alert(
+            'Confirmation',
+            'Supprimer cette alerte ?',
+            [
+              { text: 'Annuler', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Supprimer', style: 'destructive', onPress: () => resolve(true) },
+            ]
+          );
+        });
+
+    if (!confirmed) return;
+
+    try {
+      await alertAPI.deleteAlert(alertId);
+      
+      // Retirer localement
+      setAlerts(alerts.filter(alert => alert._id !== alertId));
+    } catch (error) {
+      console.error('Erreur suppression alerte:', error);
+    }
+  };
+
+  const getFilteredAlerts = () => {
+    switch (filter) {
+      case 'unread':
+        return alerts.filter(alert => !alert.lu);
       case 'critical':
+        return alerts.filter(alert => alert.niveau === 'critique');
+      default:
+        return alerts;
+    }
+  };
+
+  const getAlertStyle = (niveau: string) => {
+    switch (niveau) {
+      case 'critique':
+        return { backgroundColor: '#FFE5E5', borderColor: '#E74C3C' };
+      case 'warning':
+        return { backgroundColor: '#FFF4E5', borderColor: '#F39C12' };
+      case 'info':
+        return { backgroundColor: '#E8F4FD', borderColor: '#4A90E2' };
+      default:
+        return { backgroundColor: '#E8F8E8', borderColor: '#27AE60' };
+    }
+  };
+
+  const getAlertIcon = (niveau: string) => {
+    switch (niveau) {
+      case 'critique':
         return '🚨';
       case 'warning':
         return '⚠️';
-      case 'success':
-        return '✅';
-      default:
+      case 'info':
         return 'ℹ️';
+      default:
+        return '✅';
     }
   };
+
+  const unreadCount = alerts.filter(alert => !alert.lu).length;
+  const filteredAlerts = getFilteredAlerts();
+
+  if (loading && !refreshing) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#4A90E2" />
+        <Text style={styles.loadingText}>Chargement des alertes...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       {/* Header avec badge */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Alertes</Text>
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>2</Text>
-        </View>
+        {unreadCount > 0 && (
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{unreadCount}</Text>
+          </View>
+        )}
       </View>
+
+      {/* Actions */}
+      {alerts.length > 0 && unreadCount > 0 && (
+        <View style={styles.actionsBar}>
+          <TouchableOpacity style={styles.markAllButton} onPress={handleMarkAllAsRead}>
+            <Text style={styles.markAllButtonText}>✓ Tout marquer comme lu</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Filtres */}
       <View style={styles.filterContainer}>
-        <TouchableOpacity style={[styles.filterButton, styles.activeFilter]}>
-          <Text style={styles.filterTextActive}>Toutes</Text>
+        <TouchableOpacity
+          style={[styles.filterButton, filter === 'all' && styles.activeFilter]}
+          onPress={() => setFilter('all')}
+        >
+          <Text style={[styles.filterText, filter === 'all' && styles.filterTextActive]}>
+            Toutes ({alerts.length})
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.filterButton}>
-          <Text style={styles.filterText}>Critiques</Text>
+        
+        <TouchableOpacity
+          style={[styles.filterButton, filter === 'unread' && styles.activeFilter]}
+          onPress={() => setFilter('unread')}
+        >
+          <Text style={[styles.filterText, filter === 'unread' && styles.filterTextActive]}>
+            Non lues ({unreadCount})
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.filterButton}>
-          <Text style={styles.filterText}>Non lues</Text>
+        
+        <TouchableOpacity
+          style={[styles.filterButton, filter === 'critical' && styles.activeFilter]}
+          onPress={() => setFilter('critical')}
+        >
+          <Text style={[styles.filterText, filter === 'critical' && styles.filterTextActive]}>
+            Critiques
+          </Text>
         </TouchableOpacity>
       </View>
 
       {/* Liste des alertes */}
-      <ScrollView style={styles.alertList}>
-        {alerts.map((alert) => (
-          <TouchableOpacity
-            key={alert.id}
-            style={[
-              styles.alertCard,
-              getAlertStyle(alert.type),
-              !alert.read && styles.unreadAlert,
-            ]}
-          >
-            <View style={styles.alertHeader}>
-              <Text style={styles.alertIcon}>{getAlertIcon(alert.type)}</Text>
-              <View style={styles.alertContent}>
-                <Text style={styles.alertTitle}>{alert.title}</Text>
-                <Text style={styles.alertTime}>{alert.time}</Text>
+      <ScrollView
+        style={styles.alertList}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#4A90E2']} />
+        }
+      >
+        {filteredAlerts.length > 0 ? (
+          filteredAlerts.map((alert) => (
+            <View
+              key={alert._id}
+              style={[
+                styles.alertCard,
+                getAlertStyle(alert.niveau),
+                !alert.lu && styles.unreadAlert,
+              ]}
+            >
+              <View style={styles.alertHeader}>
+                <Text style={styles.alertIcon}>{getAlertIcon(alert.niveau)}</Text>
+                <View style={styles.alertContent}>
+                  <Text style={styles.alertTitle}>{alert.type}</Text>
+                  <Text style={styles.alertTime}>
+                    {new Date(alert.date).toLocaleString('fr-FR', {
+                      day: '2-digit',
+                      month: 'short',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </Text>
+                </View>
+                {!alert.lu && <View style={styles.unreadDot} />}
               </View>
-              {!alert.read && <View style={styles.unreadDot} />}
+              
+              <Text style={styles.alertMessage}>{alert.message}</Text>
+              
+              <View style={styles.alertActions}>
+                {!alert.lu && (
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => handleMarkAsRead(alert._id)}
+                  >
+                    <Text style={styles.actionButtonText}>✓ Marquer comme lu</Text>
+                  </TouchableOpacity>
+                )}
+                
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => handleDeleteAlert(alert._id)}
+                >
+                  <Text style={[styles.actionButtonText, { color: '#E74C3C' }]}>
+                    🗑️ Supprimer
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
-            <Text style={styles.alertMessage}>{alert.message}</Text>
-            <View style={styles.alertActions}>
-              <TouchableOpacity style={styles.actionButton}>
-                <Text style={styles.actionButtonText}>Voir détails</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        ))}
-
-        {alerts.length === 0 && (
+          ))
+        ) : (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>✨</Text>
-            <Text style={styles.emptyText}>Aucune alerte pour le moment</Text>
-            <Text style={styles.emptySubtext}>Profitez de votre journée !</Text>
+            <Text style={styles.emptyIcon}>
+              {filter === 'all' ? '✨' : filter === 'unread' ? '✅' : '🎉'}
+            </Text>
+            <Text style={styles.emptyText}>
+              {filter === 'all'
+                ? 'Aucune alerte pour le moment'
+                : filter === 'unread'
+                ? 'Toutes les alertes sont lues !'
+                : 'Aucune alerte critique'}
+            </Text>
+            <Text style={styles.emptySubtext}>
+              {filter === 'all'
+                ? 'Profitez de votre journée !'
+                : 'Continuez comme ça !'}
+            </Text>
           </View>
         )}
       </ScrollView>
@@ -123,30 +287,60 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F7FA',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F5F7FA',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666',
+  },
   header: {
     padding: 20,
-    paddingTop: 20,
+    paddingTop: 50,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    backgroundColor: '#4A90E2',
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#2C3E50',
+    color: '#FFFFFF',
   },
   badge: {
-    backgroundColor: '#D9534F',
-    width: 28,
+    backgroundColor: '#E74C3C',
+    minWidth: 28,
     height: 28,
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 8,
   },
   badgeText: {
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: 'bold',
+  },
+  actionsBar: {
+    backgroundColor: '#FFFFFF',
+    padding: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  markAllButton: {
+    backgroundColor: '#4A90E2',
+    padding: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  markAllButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   filterContainer: {
     flexDirection: 'row',
@@ -170,9 +364,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   filterTextActive: {
-    fontSize: 14,
     color: '#FFFFFF',
-    fontWeight: '600',
   },
   alertList: {
     flex: 1,
@@ -218,7 +410,7 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#D9534F',
+    backgroundColor: '#E74C3C',
   },
   alertMessage: {
     fontSize: 14,
@@ -229,6 +421,7 @@ const styles = StyleSheet.create({
   alertActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    gap: 10,
   },
   actionButton: {
     paddingVertical: 6,

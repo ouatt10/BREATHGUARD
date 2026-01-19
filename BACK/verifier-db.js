@@ -57,4 +57,4 @@ async function verifierDB() {
   }
 }
 
-verifierDB();
+verifierDB(); 

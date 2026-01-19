@@ -2,6 +2,7 @@ const DonneeBiometrique = require('../models/DonneeBiometrique');
 const TypeDonnee = require('../models/TypeDonnee'); 
 const Capteur = require('../models/Capteur');
 const { analyserDonneeBiometrique } = require('../middleware/alerteMiddleware');
+
 /**
  * 📊 SEUILS POUR L'ANALYSE DES DONNÉES
 */
@@ -58,6 +59,21 @@ const analyserValeur = (type, valeur) => {
     message: '⚠️ Valeur inhabituelle',
     couleur: '#FF9800'
   };
+};
+
+/**
+ * 🔋 Obtenir l'unité par défaut selon le type
+ */
+const getUniteParDefaut = (type) => {
+  const unites = {
+    spo2: '%',
+    frequence_cardiaque: 'bpm',
+    frequence_respiratoire: '/min',
+    temperature: '°C',
+    pression_arterielle_systolique: 'mmHg',
+    pression_arterielle_diastolique: 'mmHg'
+  };
+  return unites[type] || '';
 };
 
 /**
@@ -138,18 +154,119 @@ exports.creerDonneeBiometrique = async (req, res) => {
 };
 
 /**
- * 🔋 Obtenir l'unité par défaut selon le type
+ * 🆕 📤 Créer PLUSIEURS données biométriques en une seule requête
+ * Parfait pour : données manuelles, capteurs IA, envois groupés
  */
-const getUniteParDefaut = (type) => {
-  const unites = {
-    spo2: '%',
-    frequence_cardiaque: 'bpm',
-    frequence_respiratoire: '/min',
-    temperature: '°C',
-    pression_arterielle_systolique: 'mmHg',
-    pression_arterielle_diastolique: 'mmHg'
-  };
-  return unites[type] || '';
+exports.creerDonneesMultiples = async (req, res) => {
+  try {
+    const { spo2, frequenceCardiaque, frequenceRespiratoire, source, capteur } = req.body;
+    const utilisateurId = req.user.id;
+
+    console.log('📥 Réception données multiples:', { spo2, frequenceCardiaque, frequenceRespiratoire, source });
+
+    // Vérifier qu'au moins une valeur est fournie
+    if (!spo2 && !frequenceCardiaque && !frequenceRespiratoire) {
+      return res.status(400).json({
+        success: false,
+        message: 'Au moins une valeur biométrique est requise'
+      });
+    }
+
+    const donneesCreees = [];
+    const alertesCreees = [];
+
+    // 🔵 Traiter SpO2
+    if (spo2 !== null && spo2 !== undefined) {
+      const analyse = analyserValeur('spo2', spo2);
+      const donnee = await DonneeBiometrique.create({
+        type: 'spo2',
+        valeur: spo2,
+        unite: '%',
+        utilisateur: utilisateurId,
+        capteur: capteur || null,
+        statut: analyse.statut,
+        message: analyse.message,
+        couleur: analyse.couleur,
+        source: source || 'manuel'
+      });
+      donneesCreees.push(donnee);
+
+      // Analyser pour alertes
+      const alerte = await analyserDonneeBiometrique(donnee, utilisateurId);
+      if (alerte) alertesCreees.push(alerte);
+    }
+
+    // 💓 Traiter Fréquence Cardiaque
+    if (frequenceCardiaque !== null && frequenceCardiaque !== undefined) {
+      const analyse = analyserValeur('frequence_cardiaque', frequenceCardiaque);
+      const donnee = await DonneeBiometrique.create({
+        type: 'frequence_cardiaque',
+        valeur: frequenceCardiaque,
+        unite: 'bpm',
+        utilisateur: utilisateurId,
+        capteur: capteur || null,
+        statut: analyse.statut,
+        message: analyse.message,
+        couleur: analyse.couleur,
+        source: source || 'manuel'
+      });
+      donneesCreees.push(donnee);
+
+      // Analyser pour alertes
+      const alerte = await analyserDonneeBiometrique(donnee, utilisateurId);
+      if (alerte) alertesCreees.push(alerte);
+    }
+
+    // 🌬️ Traiter Fréquence Respiratoire
+    if (frequenceRespiratoire !== null && frequenceRespiratoire !== undefined) {
+      const analyse = analyserValeur('frequence_respiratoire', frequenceRespiratoire);
+      const donnee = await DonneeBiometrique.create({
+        type: 'frequence_respiratoire',
+        valeur: frequenceRespiratoire,
+        unite: '/min',
+        utilisateur: utilisateurId,
+        capteur: capteur || null,
+        statut: analyse.statut,
+        message: analyse.message,
+        couleur: analyse.couleur,
+        source: source || 'manuel'
+      });
+      donneesCreees.push(donnee);
+
+      // Analyser pour alertes
+      const alerte = await analyserDonneeBiometrique(donnee, utilisateurId);
+      if (alerte) alertesCreees.push(alerte);
+    }
+
+    console.log(`✅ ${donneesCreees.length} données créées, ${alertesCreees.length} alertes générées`);
+
+    const response = {
+      success: true,
+      message: `${donneesCreees.length} donnée(s) biométrique(s) enregistrée(s) avec succès`,
+      data: donneesCreees,
+      count: donneesCreees.length
+    };
+
+    // Ajouter les alertes si présentes
+    if (alertesCreees.length > 0) {
+      response.alertes = alertesCreees.map(a => ({
+        id: a._id,
+        type: a.type,
+        priorite: a.priorite,
+        titre: a.titre,
+        message: a.message
+      }));
+    }
+
+    res.status(201).json(response);
+  } catch (error) {
+    console.error('❌ Erreur création données multiples:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de l\'enregistrement des données',
+      error: error.message
+    });
+  }
 };
 
 /**
@@ -304,6 +421,7 @@ exports.supprimerDonnee = async (req, res) => {
     });
   }
 };
+
 /**
  * 📊 Obtenir tous les types de données disponibles
  */

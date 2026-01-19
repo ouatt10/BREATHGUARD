@@ -1,82 +1,54 @@
-import { Tabs } from 'expo-router';
-import React from 'react';
-import { Text } from 'react-native';
-import { UserProvider } from '../src/context/UserContext';
+import { Stack, useRouter, useSegments } from 'expo-router';
+import { AuthProvider, useAuth } from '../src/context/AuthContext';
+import { useEffect } from 'react';
+import { ActivityIndicator, View } from 'react-native';
 
-export default function RootLayout() {
+function RootLayoutNav() {
+  const { user, loading } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (loading) return;
+
+    const inAuthGroup = segments[0] === '(tabs)';
+
+    console.log('[LAYOUT] 📍 Segments:', segments);
+    console.log('[LAYOUT] 👤 User:', user ? 'connecté' : 'non connecté');
+    console.log('[LAYOUT] 📂 Dans (tabs)?', inAuthGroup);
+
+    if (!user && inAuthGroup) {
+      // Utilisateur non connecté essaie d'accéder aux tabs
+      console.log('[LAYOUT] ⚠️ Non authentifié, redirection vers /login');
+      router.replace('/login');
+    } else if (user && !inAuthGroup) {
+      // Utilisateur connecté est sur login/signup
+      console.log('[LAYOUT] ✅ Authentifié, redirection vers /(tabs)');
+      router.replace('/(tabs)');
+    }
+  }, [user, loading, segments]);
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF' }}>
+        <ActivityIndicator size="large" color="#4A90E2" />
+      </View>
+    );
+  }
+
   return (
-    <UserProvider>
-      <TabLayout />
-    </UserProvider>
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="login" />
+      <Stack.Screen name="signup" />
+    </Stack>
   );
 }
 
-function TabLayout() {
+export default function RootLayout() {
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: '#4A90E2',
-        tabBarInactiveTintColor: '#7F8C8D',
-        headerShown: false,
-        tabBarStyle: {
-          height: 60,
-          paddingBottom: 8,
-          paddingTop: 8,
-          backgroundColor: '#FFFFFF',
-          borderTopWidth: 1,
-          borderTopColor: '#E0E0E0',
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '600',
-        },
-      }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Accueil',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 24, color: color }}>🏠</Text>
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Données',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 24, color: color }}>📊</Text>
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="map"
-        options={{
-          title: 'Carte',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 24, color: color }}>🗺️</Text>
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="alerts"
-        options={{
-          title: 'Alertes',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 24, color: color }}>🔔</Text>
-          ),
-          tabBarBadge: 2,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profil',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 24, color: color }}>👤</Text>
-          ),
-        }}
-      />
-    </Tabs>
+    <AuthProvider>
+      <RootLayoutNav />
+    </AuthProvider>
   );
 }

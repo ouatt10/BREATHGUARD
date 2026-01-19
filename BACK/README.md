@@ -129,7 +129,7 @@ Le système analyse **simultanément** :
 └─────────────────────────────────────────────────────────┘
                        ▼
           ┌─────────────────────────────┐
-          │   🎯 Prochaine Étape (à venir) │
+          │   🎯 Prochaine Étape          │
           │   Module IA/ML TensorFlow.js   │
           │   • Prédiction crises 24h      │
           │   • Apprentissage patterns     │
@@ -164,8 +164,8 @@ Le système analyse **simultanément** :
 
 ```bash
 # 1. Cloner le repository
-git clone https://github.com/votre-repo/breathguard-backend.git
-cd breathguard-backend
+git clone https://github.com/ouatt10/BREATHGUARD.git
+cd BACK
 
 # 2. Installer les dépendances
 npm install
